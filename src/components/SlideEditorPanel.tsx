@@ -146,7 +146,7 @@ export function SlideEditorPanel({
           ) : (
             <>
               <RefreshCw className="h-4 w-4" aria-hidden="true" />
-              <span>Tạo lại slide này</span>
+              <span>Tạo lại slide này (-1 điểm)</span>
             </>
           )}
         </button>

@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Copy,
   FileCode2,
   Maximize2,
   Printer,
@@ -22,10 +23,21 @@ import type {
 } from './types/slides';
 import { exportDeckToPptx } from './utils/exportPptx';
 import {
+  COST_GENERATE_DECK,
+  COST_REGENERATE_SLIDE,
+  DAILY_AI_QUOTA_MAX,
+  type QuotaState,
+  canSpendQuota,
+  loadQuotaState,
+  spendQuota,
+} from './utils/quotaLogic';
+import {
   INITIAL_DEMO_DECK,
   SLIDE_THEMES,
   buildPrintableHtml,
   deleteSlideFromDeck,
+  formatCleanOutlineMarkdown,
+  formatCleanOutlineText,
   insertBlankSlide,
   moveSlideInDeck,
   normalizeDeckResponse,
@@ -33,6 +45,14 @@ import {
   updateSlideInDeck,
   validatePromptConfig,
 } from './utils/slideLogic';
+
+function formatApiErrorMessage(rawMessage: string): string {
+  const lower = rawMessage.toLowerCase();
+  if (lower.includes('429') || lower.includes('resource_exhausted') || lower.includes('quota')) {
+    return 'Hệ thống AI đang tạm thời chạm giới hạn lượt gọi. Danh sách slide hiện tại vẫn được giữ nguyên để bạn chỉnh sửa thủ công, sao chép dàn ý hoặc xuất PPTX bình thường.';
+  }
+  return rawMessage;
+}
 
 export default function App() {
   const [deck, setDeck] = useState<PresentationDeck>(INITIAL_DEMO_DECK);
@@ -43,6 +63,10 @@ export default function App() {
     style: INITIAL_DEMO_DECK.style,
     language: INITIAL_DEMO_DECK.language,
   });
+
+  const [quota, setQuota] = useState<QuotaState>(() =>
+    loadQuotaState(typeof window !== 'undefined' ? window.localStorage : null)
+  );
 
   const [activeIndex, setActiveIndex] = useState(0);
   const [activeSection, setActiveSection] = useState<WorkspaceSection>('editor');
@@ -57,6 +81,19 @@ export default function App() {
 
   const currentSlide = deck.slides[activeIndex] ?? deck.slides[0];
 
+  // Auto-sync daily reset when returning to tab or crossing midnight
+  useEffect(() => {
+    const syncQuota = () => {
+      setQuota(loadQuotaState(window.localStorage));
+    };
+    window.addEventListener('focus', syncQuota);
+    const interval = window.setInterval(syncQuota, 60_000);
+    return () => {
+      window.removeEventListener('focus', syncQuota);
+      window.clearInterval(interval);
+    };
+  }, []);
+
   useEffect(() => {
     if (!statusMessage) return;
     const timer = window.setTimeout(() => setStatusMessage(null), 5000);
@@ -66,7 +103,6 @@ export default function App() {
   const handlePromptChange = (next: PromptConfig) => {
     setPromptConfig(next);
     setErrorMessage(null);
-    // Live-update slide visual theme when user switches design style
     if (next.style !== deck.style) {
       setDeck((prev) => ({ ...prev, style: next.style }));
     }
@@ -86,6 +122,15 @@ export default function App() {
   };
 
   const handleGenerateDeck = async () => {
+    const freshQuota = loadQuotaState(window.localStorage);
+    setQuota(freshQuota);
+
+    const quotaCheck = canSpendQuota(freshQuota, COST_GENERATE_DECK);
+    if (!quotaCheck.ok) {
+      setErrorMessage(quotaCheck.error ?? 'Bạn đã hết điểm AI hôm nay.');
+      return;
+    }
+
     const validation = validatePromptConfig(promptConfig);
     if (!validation.valid) {
       setErrorMessage(validation.error ?? 'Vui lòng kiểm tra lại thông tin đầu vào.');
@@ -113,16 +158,17 @@ export default function App() {
         throw new Error('AI chưa trả về slide hợp lệ. Vui lòng thử lại.');
       }
 
+      const updatedQuota = spendQuota(freshQuota, COST_GENERATE_DECK, window.localStorage);
+      setQuota(updatedQuota);
       setDeck(nextDeck);
       setActiveIndex(0);
       setActiveSection('editor');
-      setStatusMessage(`Đã tạo hoàn chỉnh ${nextDeck.slides.length} slide theo phong cách ${SLIDE_THEMES[nextDeck.style].name}.`);
-    } catch (err) {
-      setErrorMessage(
-        err instanceof Error
-          ? err.message
-          : 'Đã xảy ra lỗi khi tạo bài trình chiếu.'
+      setStatusMessage(
+        `Đã tạo hoàn chỉnh ${nextDeck.slides.length} slide theo phong cách ${SLIDE_THEMES[nextDeck.style].name} (còn ${updatedQuota.remaining}/${DAILY_AI_QUOTA_MAX} điểm hôm nay).`
       );
+    } catch (err) {
+      const rawMsg = err instanceof Error ? err.message : 'Đã xảy ra lỗi khi tạo bài trình chiếu.';
+      setErrorMessage(formatApiErrorMessage(rawMsg));
     } finally {
       setIsGenerating(false);
     }
@@ -131,6 +177,15 @@ export default function App() {
   const handleRegenerateSlide = async (targetIndex: number, instruction?: string) => {
     const targetSlide = deck.slides[targetIndex];
     if (!targetSlide) return;
+
+    const freshQuota = loadQuotaState(window.localStorage);
+    setQuota(freshQuota);
+
+    const quotaCheck = canSpendQuota(freshQuota, COST_REGENERATE_SLIDE);
+    if (!quotaCheck.ok) {
+      setErrorMessage(quotaCheck.error ?? 'Bạn đã hết điểm AI hôm nay.');
+      return;
+    }
 
     setErrorMessage(null);
     setRegeneratingIndex(targetIndex);
@@ -158,12 +213,15 @@ export default function App() {
       }
 
       const normalized = normalizeSingleSlide(payload, targetIndex, targetSlide.id);
+      const updatedQuota = spendQuota(freshQuota, COST_REGENERATE_SLIDE, window.localStorage);
+      setQuota(updatedQuota);
       setDeck((prev) => updateSlideInDeck(prev, targetSlide.id, normalized));
-      setStatusMessage(`Đã tạo lại nội dung cho Slide ${targetIndex + 1}.`);
-    } catch (err) {
-      setErrorMessage(
-        err instanceof Error ? err.message : 'Lỗi khi tạo lại slide.'
+      setStatusMessage(
+        `Đã tạo lại nội dung cho Slide ${targetIndex + 1} (còn ${updatedQuota.remaining}/${DAILY_AI_QUOTA_MAX} điểm hôm nay).`
       );
+    } catch (err) {
+      const rawMsg = err instanceof Error ? err.message : 'Lỗi khi tạo lại slide.';
+      setErrorMessage(formatApiErrorMessage(rawMsg));
     } finally {
       setRegeneratingIndex(null);
     }
@@ -224,6 +282,52 @@ export default function App() {
     setStatusMessage('Đã tải xuống bản trình chiếu HTML kèm ghi chú thuyết trình!');
   };
 
+  const handleCopyCleanOutline = async () => {
+    const cleanText = formatCleanOutlineText(deck);
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(cleanText);
+      } else {
+        throw new Error('Clipboard API unavailable');
+      }
+      setStatusMessage('Đã sao chép dàn ý sạch');
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = cleanText;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      textarea.remove();
+      setStatusMessage('Đã sao chép dàn ý sạch');
+    }
+  };
+
+  const triggerTextDownload = (content: string, filename: string, mimeType: string) => {
+    const blob = new Blob([content], { type: `${mimeType};charset=utf-8` });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadOutlineTxt = () => {
+    const text = formatCleanOutlineText(deck);
+    triggerTextDownload(text, 'slideforge-dan-y-sach.txt', 'text/plain');
+    setStatusMessage('Đã tải xuống dàn ý sạch (.txt)!');
+  };
+
+  const handleDownloadOutlineMd = () => {
+    const md = formatCleanOutlineMarkdown(deck);
+    triggerTextDownload(md, 'slideforge-dan-y-sach.md', 'text/markdown');
+    setStatusMessage('Đã tải xuống dàn ý sạch (.md)!');
+  };
+
   const handlePrintPdf = () => {
     setStatusMessage('Đang mở hộp thoại in / lưu PDF gọn gàng...');
     window.setTimeout(() => {
@@ -246,6 +350,8 @@ export default function App() {
         onSelectSection={handleSelectSection}
         onExportPptx={handleExportPptx}
         isExporting={isExportingPptx}
+        quotaRemaining={quota.remaining}
+        quotaMax={DAILY_AI_QUOTA_MAX}
       />
 
       {/* Mobile section switcher */}
@@ -315,9 +421,20 @@ export default function App() {
           onApplySample={handleApplySample}
           isGenerating={isGenerating}
           errorMessage={errorMessage}
+          quotaRemaining={quota.remaining}
+          quotaCost={COST_GENERATE_DECK}
         />
 
         <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 space-y-6">
+          {errorMessage && activeSection === 'outline' && (
+            <div
+              role="alert"
+              className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+            >
+              {errorMessage}
+            </div>
+          )}
+
           {activeSection === 'outline' ? (
             <OutlineView
               deck={deck}
@@ -328,12 +445,15 @@ export default function App() {
                 setActiveSection('editor');
               }}
               onRegenerateSlide={(idx) => handleRegenerateSlide(idx)}
+              onCopyCleanOutline={handleCopyCleanOutline}
+              onDownloadOutlineTxt={handleDownloadOutlineTxt}
+              onDownloadOutlineMd={handleDownloadOutlineMd}
             />
           ) : (
             <>
               {/* Stage Toolbar */}
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="min-w-0">
+              <div className="flex flex-wrap xl:flex-nowrap items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 text-xs text-slate-500">
                     <span>{SLIDE_THEMES[deck.style].name}</span>
                     <span aria-hidden="true">·</span>
@@ -346,7 +466,15 @@ export default function App() {
                   </h2>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleCopyCleanOutline}
+                    className="inline-flex min-h-[38px] cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap"
+                  >
+                    <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Copy dàn ý cho Canva</span>
+                  </button>
                   <button
                     type="button"
                     onClick={handleExportHtml}

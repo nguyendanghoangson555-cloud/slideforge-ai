@@ -1,5 +1,6 @@
-import { Edit3, RefreshCw } from 'lucide-react';
+import { Copy, Edit3, FileText, RefreshCw } from 'lucide-react';
 import type { PresentationDeck } from '../types/slides';
+import { formatCleanOutlineText } from '../utils/slideLogic';
 
 interface OutlineViewProps {
   deck: PresentationDeck;
@@ -7,6 +8,9 @@ interface OutlineViewProps {
   regeneratingIndex: number | null;
   onSelectSlideForEdit: (index: number) => void;
   onRegenerateSlide: (index: number) => void;
+  onCopyCleanOutline: () => void;
+  onDownloadOutlineTxt: () => void;
+  onDownloadOutlineMd: () => void;
 }
 
 export function OutlineView({
@@ -15,9 +19,14 @@ export function OutlineView({
   regeneratingIndex,
   onSelectSlideForEdit,
   onRegenerateSlide,
+  onCopyCleanOutline,
+  onDownloadOutlineTxt,
+  onDownloadOutlineMd,
 }: OutlineViewProps) {
+  const cleanOutlineText = formatCleanOutlineText(deck);
+
   return (
-    <section aria-label="Dàn ý toàn bộ bài trình chiếu" className="space-y-4">
+    <section aria-label="Dàn ý toàn bộ bài trình chiếu" className="space-y-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-200 pb-3">
         <div>
           <h2 className="text-lg font-bold text-slate-900">{deck.deckTitle}</h2>
@@ -27,6 +36,64 @@ export function OutlineView({
         </div>
       </div>
 
+      {/* Clean Outline / Canva Paste Panel */}
+      <div
+        aria-label="Xuất dàn ý văn bản sạch"
+        className="rounded-xl border border-slate-200 bg-white p-5 space-y-3.5"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">
+              Dàn ý văn bản sạch (Canva Paste)
+            </h3>
+            <p className="text-xs text-slate-500">
+              Văn bản thuần túy theo cấu trúc chuẩn từng slide — sao chép trực tiếp sang Canva hoặc tải về máy, không tốn điểm AI.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={onCopyCleanOutline}
+              className="inline-flex min-h-[38px] cursor-pointer items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-slate-800 whitespace-nowrap"
+            >
+              <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>Copy dàn ý cho Canva</span>
+            </button>
+            <button
+              type="button"
+              onClick={onDownloadOutlineTxt}
+              className="inline-flex min-h-[38px] cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap"
+            >
+              <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>Tải .txt</span>
+            </button>
+            <button
+              type="button"
+              onClick={onDownloadOutlineMd}
+              className="inline-flex min-h-[38px] cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap"
+            >
+              <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>Tải .md</span>
+            </button>
+          </div>
+        </div>
+
+        <label htmlFor="clean-outline-preview" className="sr-only">
+          Nội dung dàn ý văn bản sạch
+        </label>
+        <textarea
+          id="clean-outline-preview"
+          data-testid="clean-outline-text"
+          readOnly
+          rows={10}
+          value={cleanOutlineText}
+          onFocus={(e) => e.currentTarget.select()}
+          className="w-full rounded-lg border border-slate-200 bg-slate-50 p-3.5 font-mono text-xs leading-relaxed text-slate-800 focus:border-blue-600 focus:outline-none"
+        />
+      </div>
+
+      {/* Per-slide cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {deck.slides.map((slide, idx) => {
           const isSelected = idx === activeIndex;
@@ -82,7 +149,7 @@ export function OutlineView({
                   className="inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${isBusy ? 'animate-spin' : ''}`} aria-hidden="true" />
-                  <span>{isBusy ? 'Đang tạo lại...' : 'Tạo lại'}</span>
+                  <span>{isBusy ? 'Đang tạo lại...' : 'Tạo lại (-1 điểm)'}</span>
                 </button>
                 <button
                   type="button"

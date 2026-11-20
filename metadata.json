@@ -2,5 +2,7 @@
   "name": "SlideForge AI",
   "description": "Ứng dụng tạo bản trình chiếu hoàn chỉnh bằng AI với dàn ý tự động, xem trước 16:9 trực quan, chỉnh sửa trực tiếp, ghi chú thuyết trình và xuất PPTX/HTML/PDF.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

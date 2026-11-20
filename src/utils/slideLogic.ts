@@ -438,6 +438,77 @@ export function escapeHtml(input: string): string {
     .replaceAll("'", '&#39;');
 }
 
+export function cleanPlainText(input: string): string {
+  return input
+    .replace(/<[^>]*>/g, '')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function formatCleanOutlineText(deck: PresentationDeck): string {
+  return deck.slides
+    .map((slide, index) => {
+      const lines: string[] = [];
+      const title = cleanPlainText(slide.title) || `Slide ${index + 1}`;
+      lines.push(`Slide ${index + 1}: ${title}`);
+
+      const subtitle = cleanPlainText(slide.subtitle || '');
+      if (subtitle) {
+        lines.push(`- ${subtitle}`);
+      }
+
+      slide.bullets.forEach((bullet) => {
+        const cleanBullet = cleanPlainText(bullet);
+        if (cleanBullet) {
+          lines.push(`- ${cleanBullet}`);
+        }
+      });
+
+      const notes = cleanPlainText(slide.speakerNotes || '');
+      if (notes) {
+        lines.push(`- Ghi chú thuyết trình: ${notes}`);
+      }
+
+      return lines.join('\n');
+    })
+    .join('\n\n');
+}
+
+export function formatCleanOutlineMarkdown(deck: PresentationDeck): string {
+  const headerLines = [
+    `# ${cleanPlainText(deck.deckTitle)}`,
+    deck.audience ? `Đối tượng: ${cleanPlainText(deck.audience)}` : '',
+  ].filter(Boolean);
+
+  const slideBlocks = deck.slides.map((slide, index) => {
+    const lines: string[] = [];
+    const title = cleanPlainText(slide.title) || `Slide ${index + 1}`;
+    lines.push(`## Slide ${index + 1}: ${title}`);
+
+    const subtitle = cleanPlainText(slide.subtitle || '');
+    if (subtitle) {
+      lines.push(`*${subtitle}*`);
+    }
+
+    slide.bullets.forEach((bullet) => {
+      const cleanBullet = cleanPlainText(bullet);
+      if (cleanBullet) {
+        lines.push(`- ${cleanBullet}`);
+      }
+    });
+
+    const notes = cleanPlainText(slide.speakerNotes || '');
+    if (notes) {
+      lines.push(`> Ghi chú thuyết trình: ${notes}`);
+    }
+
+    return lines.join('\n');
+  });
+
+  return `${headerLines.join('\n')}\n\n${slideBlocks.join('\n\n')}`;
+}
+
 export function buildPrintableHtml(deck: PresentationDeck): string {
   const theme = getThemeConfig(deck.style);
   const fontStack =

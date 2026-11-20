@@ -8,6 +8,8 @@ import {
   clampSlideCount,
   deleteSlideFromDeck,
   escapeHtml,
+  formatCleanOutlineMarkdown,
+  formatCleanOutlineText,
   getThemeConfig,
   insertBlankSlide,
   moveSlideInDeck,
@@ -106,4 +108,35 @@ test('buildPrintableHtml escapes HTML entities and renders all slides', () => {
   assert.ok(html.includes('Demo &lt;Safe&gt;'));
   assert.ok(html.includes('Slide 1 / 6'));
   assert.ok(!html.includes('<script>alert'));
+});
+
+test('formatCleanOutlineText produces clean Canva-ready plain text without HTML/JSON', () => {
+  const text = formatCleanOutlineText({
+    ...INITIAL_DEMO_DECK,
+    slides: [
+      {
+        id: 's1',
+        layout: 'title',
+        title: '<b>Mở đầu</b>',
+        subtitle: 'Tóm tắt ngắn gọn',
+        bullets: ['Ý chính 1', 'Ý chính 2'],
+        speakerNotes: 'Lời dẫn mở đầu',
+      },
+    ],
+  });
+
+  assert.equal(
+    text,
+    [
+      'Slide 1: Mở đầu',
+      '- Tóm tắt ngắn gọn',
+      '- Ý chính 1',
+      '- Ý chính 2',
+      '- Ghi chú thuyết trình: Lời dẫn mở đầu',
+    ].join('\n')
+  );
+
+  const md = formatCleanOutlineMarkdown(INITIAL_DEMO_DECK);
+  assert.ok(md.includes('## Slide 1:'));
+  assert.ok(md.includes('> Ghi chú thuyết trình:'));
 });

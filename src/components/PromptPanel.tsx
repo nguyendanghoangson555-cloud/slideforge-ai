@@ -14,6 +14,8 @@ interface PromptPanelProps {
   onApplySample: (sample: SamplePrompt) => void;
   isGenerating: boolean;
   errorMessage: string | null;
+  quotaRemaining: number;
+  quotaCost: number;
 }
 
 const STYLE_LIST: SlideStyle[] = ['modern', 'academic', 'minimal', 'dynamic'];
@@ -25,7 +27,10 @@ export function PromptPanel({
   onApplySample,
   isGenerating,
   errorMessage,
+  quotaRemaining,
+  quotaCost,
 }: PromptPanelProps) {
+  const hasEnoughQuota = quotaRemaining >= quotaCost;
   return (
     <aside
       aria-label="Bảng cấu hình tạo bài trình chiếu"
@@ -188,6 +193,17 @@ export function PromptPanel({
           </div>
         </div>
 
+        {!hasEnoughQuota && !errorMessage && (
+          <div
+            role="note"
+            className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+          >
+            Bạn còn <strong className="font-tabular">{quotaRemaining}</strong> điểm hôm nay (cần{' '}
+            <strong className="font-tabular">{quotaCost}</strong> điểm để tạo bộ slide mới). Bạn vẫn
+            có thể chỉnh sửa thủ công, sao chép dàn ý và xuất file bình thường.
+          </div>
+        )}
+
         {errorMessage && (
           <div
             role="alert"
@@ -210,7 +226,7 @@ export function PromptPanel({
           ) : (
             <>
               <Sparkles className="h-4 w-4" aria-hidden="true" />
-              <span>Tạo bài trình chiếu</span>
+              <span>Tạo bài trình chiếu (-{quotaCost} điểm)</span>
             </>
           )}
         </button>
